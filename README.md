@@ -1,7 +1,5 @@
 # WhisperO 😮
 
-**Just speak.**
-
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](pyproject.toml)
 [![Backend](https://img.shields.io/badge/Backend-faster--whisper%20%7C%20whisper.cpp-orange.svg)](https://github.com/SYSTRAN/faster-whisper)
@@ -10,25 +8,24 @@ WhisperO is a push-to-talk desktop dictation app.
 Hold the hotkey, speak, release, and text is pasted at your cursor.
 
 Local mode is the default. No server is required.
+It uses OpenAI's Whisper model for speech recognition, running entirely on your machine.
 On first run, WhisperO downloads a speech model to `~/.whispero/models/`.
-`large-v3` is the default model and is about 3 GB.
-
-## Demo
-
-![Dictation demo](assets/demo.gif)
-
-![Tray menu and custom dictionary](assets/tray.gif)
+`large-v3` is the default model and is about 3 GB. Smaller models (`medium`, `small`, `base`, `tiny`) are also available for faster inference on lower-end hardware.
 
 ## Features
 
-- Cross-platform: macOS, Windows, Linux
-- Local transcription with faster-whisper (default)
-- Optional remote whisper.cpp server backend
-- Hold-to-record hotkey (`Win`+`Ctrl` on Windows, `⌘`+`Ctrl` on Mac)
-- Auto-paste at cursor without losing clipboard contents
-- Custom dictionary for names and project terms
-- Start/stop sound feedback
-- System tray app with quick controls
+- **Hold-to-record hotkey** — `Win`+`Ctrl` on Windows, `⌘`+`Ctrl` on Mac
+- **Auto-paste at cursor** without losing clipboard contents
+- **Local transcription** with faster-whisper (default), no server needed
+- **Optional remote server** via whisper.cpp for multi-machine setups
+- **Cross-platform** — macOS, Windows, Linux
+- **Custom dictionary** for names and project terms
+- **Start/stop sound feedback**
+- **System tray** with model switching, dictionary editor, and quick controls
+
+![Dictation demo](assets/demo.gif)
+
+![Model switching and tray menu](assets/model-switch.gif)
 
 ## Quick Start (Local Default)
 
@@ -194,11 +191,34 @@ Output:
 - macOS: `dist/WhisperO.app`
 - Windows: `dist/WhisperO/WhisperO.exe`
 
+## Uninstall
+
+```bash
+pip uninstall whispero
+```
+
+To also remove downloaded models and settings:
+
+```bash
+# macOS / Linux
+rm -rf ~/.whispero
+
+# Windows
+rmdir /s %USERPROFILE%\.whispero
+```
+
 ## Contributing
 
 PRs are welcome.
 Keep behavior stable across both backends.
 Please test on your target OS before opening a PR.
+
+## Credits
+
+- [OpenAI Whisper](https://github.com/openai/whisper) — the speech recognition model
+- [faster-whisper](https://github.com/SYSTRAN/faster-whisper) — CTranslate2 inference engine
+- [whisper.cpp](https://github.com/ggerganov/whisper.cpp) — C/C++ server backend
+- [Google Noto Emoji](https://github.com/googlefonts/noto-emoji) — the 😮 icon (Apache 2.0)
 
 ## License
 
