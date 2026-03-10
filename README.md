@@ -29,14 +29,41 @@ On first run, WhisperO downloads a speech model to `~/.whispero/models/`.
 
 ## Quick Start (Local Default)
 
-1. **Install**
+### One-Line Install
+
+**macOS / Linux:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/parkercai/whispero/main/setup.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/parkercai/whispero/main/setup.ps1 | iex
+```
+
+The setup script installs Python dependencies and WhisperO in an isolated environment. Run `whispero` when it's done.
+
+### Manual Install
+
+1. **Prerequisites (macOS)**
+   ```bash
+   brew install python@3.12 portaudio
+   ```
+
+2. **Install**
    ```bash
    git clone https://github.com/parkercai/whispero.git
    cd whispero
    pip install .
    ```
 
-2. **Run**
+   WhisperO works on CPU out of the box. For faster GPU inference on NVIDIA GPUs, install:
+   - [CUDA Toolkit 12](https://developer.nvidia.com/cuda-downloads) (includes cuBLAS)
+   - [cuDNN 9 for CUDA 12](https://developer.nvidia.com/cudnn)
+
+   Without these, WhisperO still works — just slower.
+
+3. **Run**
    ```bash
    whispero
    ```
@@ -47,7 +74,7 @@ On first run, WhisperO downloads a speech model to `~/.whispero/models/`.
 
 That is it. WhisperO starts in local mode and uses model `large-v3`.
 
-3. **Run in background without terminal window (optional)**
+4. **Run in background without terminal window (optional)**
 
    **Windows:**
    ```bash
@@ -63,6 +90,8 @@ That is it. WhisperO starts in local mode and uses model `large-v3`.
    ```
 
    For login startup, add WhisperO to System Settings → General → Login Items.
+
+> **macOS permissions:** WhisperO needs Accessibility access (for the hotkey) and Microphone access (for recording). Go to System Settings → Privacy & Security to grant these to your terminal app.
 
 ## Advanced: Remote Server
 
