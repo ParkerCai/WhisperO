@@ -107,7 +107,7 @@ fi
 # --- Create virtual environment ---
 if [ -d "$VENV_DIR" ]; then
   info "Virtual environment already exists at $VENV_DIR"
-  read -rp "   Recreate it? (y/N) " recreate
+  read -rp "   Recreate it? Updating: just press Enter (y/N) " recreate
   if [[ "$recreate" =~ ^[Yy]$ ]]; then
     rm -rf "$VENV_DIR"
     $PYTHON -m venv "$VENV_DIR"

@@ -73,7 +73,7 @@ if (-not $RepoDir) {
 # --- Create virtual environment ---
 if (Test-Path $VenvDir) {
     Info "Virtual environment already exists at $VenvDir"
-    $recreate = Read-Host "   Recreate it? (y/N)"
+    $recreate = Read-Host "   Recreate it? Updating: just press Enter (y/N)"
     if ($recreate -match "^[Yy]$") {
         Remove-Item -Recurse -Force $VenvDir
         & $PythonCmd -m venv $VenvDir
