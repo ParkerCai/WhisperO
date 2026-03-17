@@ -138,7 +138,7 @@ def clean_build() -> None:
 
 def write_entry_script() -> None:
     ENTRY_SCRIPT.write_text(
-        "import multiprocessing\nfrom whispero.app import main\n\nif __name__ == '__main__':\n    multiprocessing.freeze_support()\n    main()\n",
+        "import multiprocessing\nmultiprocessing.freeze_support()\n\nfrom whispero.app import main\n\nif __name__ == '__main__':\n    main()\n",
         encoding="utf-8",
     )
 
