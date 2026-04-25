@@ -15,10 +15,26 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT = SCRIPT_DIR.parent
 DIST = ROOT / "dist"
 PYI_BUILD = ROOT / ".pyinstaller-build"
-ICONS_DIR = SCRIPT_DIR / "icons"
+ROOT_ICONS_DIR = ROOT / "icons"
+BUILD_ICONS_DIR = SCRIPT_DIR / "icons"
+ICONS_DIR_CANDIDATES = (ROOT_ICONS_DIR, BUILD_ICONS_DIR)
 SOUNDS_DIR = ROOT / "assets" / "sounds"
 APP_NAME = "WhisperO"
 ENTRY_SCRIPT = ROOT / ".whispero_entry.py"
+
+
+def resolve_icons_dir(*required_files: str) -> Path:
+    """Prefer the project-level icons directory, with build/icons as fallback."""
+    for candidate in ICONS_DIR_CANDIDATES:
+        if candidate.exists() and all((candidate / name).exists() for name in required_files):
+            return candidate
+    for candidate in ICONS_DIR_CANDIDATES:
+        if candidate.exists():
+            return candidate
+    return ROOT_ICONS_DIR
+
+
+ICONS_DIR = resolve_icons_dir("icon.png", "icon.ico")
 
 
 def run(cmd, **kwargs):
@@ -52,47 +68,104 @@ def check_deps() -> None:
 
 def generate_icons() -> None:
     """Verify app icons exist."""
-    ico = ICONS_DIR / "icon.ico"
-    png = ICONS_DIR / "icon.png"
+    icons_dir = resolve_icons_dir("icon.ico", "icon.png")
+    ico = icons_dir / "icon.ico"
+    png = icons_dir / "icon.png"
     if ico.exists() and png.exists():
-        print(f"  ✓ Icons ready ({ico.stat().st_size // 1024}KB .ico)")
+        print(f"  ✓ Icons ready in {icons_dir} ({ico.stat().st_size // 1024}KB .ico)")
         return
-    print("  ❌ Missing icons. Place icon.png and icon.ico in build/icons/")
+    searched = ", ".join(str(path) for path in ICONS_DIR_CANDIDATES)
+    print(f"  ❌ Missing icons. Place icon.png and icon.ico in one of: {searched}")
     sys.exit(1)
+
+
+def select_mac_icon_source(icons_dir: Path) -> Path | None:
+    """Pick the best PNG source for a macOS .icns bundle."""
+    preferred_names = ["icon_1024.png", "icon.png"]
+    candidates = [icons_dir / name for name in preferred_names]
+    extra_pngs = sorted(
+        path
+        for path in icons_dir.glob("*.png")
+        if path.name not in preferred_names
+    )
+    candidates.extend(extra_pngs)
+
+    from PIL import Image
+
+    best_small_png: Path | None = None
+    for candidate in candidates:
+        if not candidate.exists():
+            continue
+        try:
+            with Image.open(candidate) as img:
+                width, height = img.size
+        except Exception as exc:
+            print(f"  ⚠️  Skipping unreadable icon source {candidate.name}: {exc}")
+            continue
+
+        if width == height and width >= 1024:
+            return candidate
+        if best_small_png is None and width == height:
+            best_small_png = candidate
+
+    return best_small_png
 
 
 def create_icns_mac() -> Path | None:
     """Convert PNG to .icns on macOS using iconutil."""
-    icns_path = ICONS_DIR / "icon.icns"
+    existing_icns_dir = resolve_icons_dir("icon.icns")
+    icns_path = existing_icns_dir / "icon.icns"
     if icns_path.exists():
         print("  ✓ icon.icns already exists")
         return icns_path
 
-    png_source = ICONS_DIR / "icon_1024.png"
-    if not png_source.exists():
-        print("  ⚠️  No icon_1024.png, skipping .icns generation")
+    icons_dir = resolve_icons_dir()
+    png_source = select_mac_icon_source(icons_dir)
+    icns_path = icons_dir / "icon.icns"
+    if not png_source:
+        print("  ⚠️  No PNG icon source found, skipping .icns generation")
         return None
 
     from PIL import Image
 
-    iconset = ICONS_DIR / "icon.iconset"
+    iconset = icons_dir / "icon.iconset"
     if iconset.exists():
         shutil.rmtree(iconset)
     iconset.mkdir(exist_ok=True)
 
-    img = Image.open(png_source)
-    for sz in [16, 32, 128, 256, 512]:
-        resized = img.resize((sz, sz), Image.LANCZOS)
-        resized.save(iconset / f"icon_{sz}x{sz}.png")
-        resized2x = img.resize((sz * 2, sz * 2), Image.LANCZOS)
-        resized2x.save(iconset / f"icon_{sz}x{sz}@2x.png")
-
     try:
-        run(["iconutil", "-c", "icns", str(iconset), "-o", str(icns_path)])
+        with Image.open(png_source) as img:
+            source = img.convert("RGBA")
+            source_size = img.size
+
+        if source_size[0] < 1024 or source_size[1] < 1024:
+            print(
+                f"  ⚠️  Using {png_source.name} ({source_size[0]}x{source_size[1]}) and scaling it up for macOS"
+            )
+        else:
+            print(f"  ✓ Using {png_source.name} for macOS icon generation")
+
+        for sz in [16, 32, 128, 256, 512]:
+            resized = source.resize((sz, sz), Image.LANCZOS)
+            resized.save(iconset / f"icon_{sz}x{sz}.png")
+            resized2x = source.resize((sz * 2, sz * 2), Image.LANCZOS)
+            resized2x.save(iconset / f"icon_{sz}x{sz}@2x.png")
+
+        iconutil = shutil.which("iconutil")
+        if not iconutil:
+            print("  ⚠️  iconutil not found, skipping .icns generation")
+            return None
+
+        result = subprocess.run(
+            [iconutil, "-c", "icns", str(iconset), "-o", str(icns_path)],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            stderr = result.stderr.strip() or result.stdout.strip() or "unknown error"
+            print(f"  ⚠️  iconutil failed: {stderr}")
+            return None
         print("  ✓ icon.icns created")
-    except Exception as exc:
-        print(f"  ⚠️  iconutil failed: {exc}")
-        return None
     finally:
         shutil.rmtree(iconset, ignore_errors=True)
 

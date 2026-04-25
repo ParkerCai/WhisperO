@@ -8,6 +8,10 @@ WHISPERO_HOME="$HOME/.whispero"
 VENV_DIR="$WHISPERO_HOME/venv"
 MIN_PYTHON="3.10"
 REPO_URL="https://github.com/parkercai/whispero.git"
+IS_INTERACTIVE=0
+if [[ -t 0 ]]; then
+  IS_INTERACTIVE=1
+fi
 
 # --- Colors (pastel palette, 256-color) ---
 RED='\033[38;5;210m'
@@ -21,6 +25,9 @@ info()  { echo -e "${CYAN}▸${NC} $1"; }
 ok()    { echo -e "${GREEN}✓${NC} $1"; }
 warn()  { echo -e "${YELLOW}!${NC} $1"; }
 fail()  { echo -e "${RED}✗${NC} $1"; exit 1; }
+run_without_stdin() {
+  "$@" </dev/null
+}
 
 echo ""
 echo -e "${BOLD}😮 WhisperO Setup${NC}"
@@ -116,7 +123,7 @@ else
     eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv 2>/dev/null)"
 
     info "Installing Python 3.12 via Homebrew..."
-    if ! brew install python@3.12; then
+    if ! run_without_stdin brew install python@3.12; then
       fail "Homebrew could not install python@3.12. Fix Homebrew or install Python 3.12 manually, then rerun setup.sh."
     fi
 
@@ -134,7 +141,9 @@ if [ "$PLATFORM" = "mac" ]; then
     if ! command -v brew &>/dev/null; then
       fail "Homebrew is required to install portaudio. Install Homebrew: https://brew.sh"
     fi
-    brew install portaudio
+    if ! run_without_stdin brew install portaudio; then
+      fail "Homebrew could not install portaudio. Fix Homebrew or install portaudio manually, then rerun setup.sh."
+    fi
     ok "portaudio installed"
   else
     ok "portaudio found"
@@ -150,10 +159,10 @@ else
   REPO_DIR="$WHISPERO_HOME/src"
   if [ -d "$REPO_DIR/.git" ]; then
     info "Updating existing clone..."
-    git -C "$REPO_DIR" pull --ff-only || warn "Could not update, using existing version"
+    run_without_stdin git -C "$REPO_DIR" pull --ff-only || warn "Could not update, using existing version"
   else
     info "Cloning WhisperO..."
-    git clone "$REPO_URL" "$REPO_DIR"
+    run_without_stdin git clone "$REPO_URL" "$REPO_DIR"
   fi
   ok "Source: $REPO_DIR"
 fi
@@ -161,7 +170,12 @@ fi
 # --- Create virtual environment ---
 if [ -d "$VENV_DIR" ]; then
   info "Virtual environment already exists at $VENV_DIR"
-  read -rp "   Recreate it? Updating: just press Enter (y/N) " recreate
+  recreate=""
+  if [ "$IS_INTERACTIVE" -eq 1 ]; then
+    read -rp "   Recreate it? Updating: just press Enter (y/N) " recreate
+  else
+    info "Non-interactive install detected, keeping existing virtual environment and updating it in place."
+  fi
   if [[ "$recreate" =~ ^[Yy]$ ]]; then
     rm -rf "$VENV_DIR"
     $PYTHON -m venv "$VENV_DIR"
