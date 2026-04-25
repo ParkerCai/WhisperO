@@ -38,59 +38,90 @@ ok "Platform: $PLATFORM"
 
 # --- Check Python ---
 # On macOS, prefer 3.12 (pyobjc not yet compatible with 3.13+)
+python_version() {
+  "$1" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null
+}
+
+check_python_candidate() {
+  local candidate="$1"
+  local resolved=""
+  local ver=""
+  local major=""
+  local minor=""
+
+  if [[ "$candidate" == */* ]]; then
+    [ -x "$candidate" ] || return 1
+    resolved="$candidate"
+  else
+    resolved=$(command -v "$candidate" 2>/dev/null) || return 1
+  fi
+
+  ver=$(python_version "$resolved") || return 1
+  major=$(echo "$ver" | cut -d. -f1)
+  minor=$(echo "$ver" | cut -d. -f2)
+
+  if [ "$major" -ne 3 ]; then
+    warn "Skipping $resolved (Python $ver). WhisperO needs Python 3." >&2
+    return 1
+  fi
+
+  if [ "$minor" -lt 10 ]; then
+    warn "Skipping $resolved (Python $ver). WhisperO needs Python 3.10+." >&2
+    return 1
+  fi
+
+  if [ "$PLATFORM" = "mac" ] && [ "$minor" -ge 13 ]; then
+    warn "Skipping $resolved (Python $ver). WhisperO currently supports Python 3.10-3.12 on macOS." >&2
+    return 1
+  fi
+
+  printf '%s\n' "$resolved"
+  return 0
+}
+
 find_python() {
-  # Check specific versions first (prefer 3.12 on Mac for pyobjc compatibility)
+  local candidate
+
   if [ "$PLATFORM" = "mac" ]; then
-    for cmd in python3.12 python3.11 python3.10; do
-      if command -v "$cmd" &>/dev/null; then
-        echo "$cmd"
+    for candidate in python3.12 /opt/homebrew/bin/python3.12 /usr/local/bin/python3.12 python3.11 python3.10; do
+      if check_python_candidate "$candidate"; then
         return 0
       fi
     done
   fi
-  # Fall back to generic python3/python
-  for cmd in python3 python; do
-    if command -v "$cmd" &>/dev/null; then
-      local ver
-      ver=$("$cmd" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null) || continue
-      local major minor
-      major=$(echo "$ver" | cut -d. -f1)
-      minor=$(echo "$ver" | cut -d. -f2)
-      if [ "$major" -ge 3 ] && [ "$minor" -ge 10 ]; then
-        # On Mac, warn if using 3.13+ (pyobjc incompatible)
-        if [ "$PLATFORM" = "mac" ] && [ "$minor" -ge 13 ]; then
-          warn "Python $ver detected — pyobjc may not install (needs ≤3.12)"
-          warn "Installing Python 3.12 for full compatibility..."
-          if command -v brew &>/dev/null; then
-            brew install python@3.12
-            if command -v python3.12 &>/dev/null; then
-              echo "python3.12"
-              return 0
-            fi
-          fi
-        fi
-        echo "$cmd"
-        return 0
-      fi
+
+  for candidate in python3 python; do
+    if check_python_candidate "$candidate"; then
+      return 0
     fi
   done
+
   return 1
 }
 
 PYTHON=""
 if PYTHON=$(find_python); then
-  ok "Python: $($PYTHON --version)"
+  ok "Python: $("$PYTHON" --version 2>&1)"
 else
   if [ "$PLATFORM" = "mac" ]; then
-    info "Python not found. Installing Python 3.12 via Homebrew..."
+    info "Compatible Python not found. WhisperO currently needs Python 3.10-3.12 on macOS."
+
     if ! command -v brew &>/dev/null; then
       info "Homebrew not found. Installing Homebrew first..."
-      /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-      eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv 2>/dev/null)"
+      if ! curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | /bin/bash; then
+        fail "Homebrew installation failed. Install Homebrew from https://brew.sh and rerun setup.sh."
+      fi
     fi
-    brew install python@3.12
-    PYTHON=$(find_python) || fail "Python install failed. Please install Python 3.10+ manually."
-    ok "Python: $($PYTHON --version)"
+
+    eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv 2>/dev/null)"
+
+    info "Installing Python 3.12 via Homebrew..."
+    if ! brew install python@3.12; then
+      fail "Homebrew could not install python@3.12. Fix Homebrew or install Python 3.12 manually, then rerun setup.sh."
+    fi
+
+    PYTHON=$(find_python) || fail "Installed python@3.12 but could not find a compatible Python executable. Try 'eval \"$(brew shellenv)\"' and rerun setup.sh."
+    ok "Python: $("$PYTHON" --version 2>&1)"
   else
     fail "Python 3.10+ not found. Install it with your package manager (e.g. sudo apt install python3)."
   fi
