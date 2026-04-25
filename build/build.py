@@ -20,6 +20,7 @@ BUILD_ICONS_DIR = SCRIPT_DIR / "icons"
 ICONS_DIR_CANDIDATES = (ROOT_ICONS_DIR, BUILD_ICONS_DIR)
 SOUNDS_DIR = ROOT / "assets" / "sounds"
 APP_NAME = "WhisperO"
+MACOS_BUNDLE_ICON_NAME = f"{APP_NAME}.icns"
 ENTRY_SCRIPT = ROOT / ".whispero_entry.py"
 
 
@@ -116,7 +117,7 @@ def create_icns_mac() -> Path | None:
     existing_icns_dir = resolve_icons_dir("icon.icns")
     icns_path = existing_icns_dir / "icon.icns"
     if icns_path.exists():
-        print("  ✓ icon.icns already exists")
+        print(f"  ✓ Using existing macOS icon: {icns_path}")
         return icns_path
 
     icons_dir = resolve_icons_dir()
@@ -165,19 +166,47 @@ def create_icns_mac() -> Path | None:
             stderr = result.stderr.strip() or result.stdout.strip() or "unknown error"
             print(f"  ⚠️  iconutil failed: {stderr}")
             return None
-        print("  ✓ icon.icns created")
+        print(f"  ✓ icon.icns created: {icns_path}")
     finally:
         shutil.rmtree(iconset, ignore_errors=True)
 
     return icns_path
 
 
-def patch_info_plist(app_path: Path) -> None:
-    """Add permission descriptions to app Info.plist."""
+def inject_macos_bundle_icon(
+    app_path: Path,
+    icon_source: Path | None,
+    bundle_icon_name: str = MACOS_BUNDLE_ICON_NAME,
+) -> str | None:
+    """Copy a stable .icns into the app bundle and return the plist icon value."""
+    if not icon_source:
+        print("  ⚠️  No macOS .icns source available for post-build bundle injection")
+        return None
+    if not icon_source.exists():
+        print(f"  ⚠️  macOS icon source not found: {icon_source}")
+        return None
+
+    resources_dir = app_path / "Contents" / "Resources"
+    resources_dir.mkdir(parents=True, exist_ok=True)
+
+    bundled_icon_path = resources_dir / bundle_icon_name
+    source_resolved = icon_source.resolve()
+    destination_resolved = bundled_icon_path.resolve() if bundled_icon_path.exists() else None
+    if destination_resolved != source_resolved:
+        shutil.copy2(icon_source, bundled_icon_path)
+
+    print(f"  ✓ Bundled macOS icon as {bundled_icon_path.name}")
+    return bundled_icon_path.stem
+
+
+def patch_info_plist(app_path: Path, bundle_icon_source: Path | None = None) -> None:
+    """Add permission descriptions to app Info.plist and force a stable bundle icon."""
     plist_path = app_path / "Contents" / "Info.plist"
     if not plist_path.exists():
         print(f"  ⚠️  No Info.plist found at {plist_path}")
         return
+
+    bundle_icon_value = inject_macos_bundle_icon(app_path, bundle_icon_source)
 
     with plist_path.open("rb") as file:
         plist = plistlib.load(file)
@@ -189,11 +218,18 @@ def patch_info_plist(app_path: Path) -> None:
         "WhisperO needs accessibility access to detect hotkeys and paste transcriptions."
     )
     plist["LSUIElement"] = True
+    if bundle_icon_value:
+        plist["CFBundleIconFile"] = bundle_icon_value
 
     with plist_path.open("wb") as file:
         plistlib.dump(plist, file)
 
-    print("  ✓ Info.plist patched with permission descriptions")
+    if bundle_icon_value:
+        print(
+            f"  ✓ Info.plist patched with permission descriptions and CFBundleIconFile={bundle_icon_value}"
+        )
+    else:
+        print("  ✓ Info.plist patched with permission descriptions")
 
 
 
@@ -257,6 +293,8 @@ def build_pyinstaller() -> None:
 
     if system == "Darwin":
         icns = create_icns_mac()
+        if not icns:
+            print("  ⚠️  Proceeding without a generated macOS build icon; post-build injection may be skipped")
         args += [
             "--windowed",
             "--osx-bundle-identifier",
@@ -319,7 +357,7 @@ def build_pyinstaller() -> None:
                     print(f"     {item.name}")
                 sys.exit(1)
 
-        patch_info_plist(app_path)
+        patch_info_plist(app_path, bundle_icon_source=icns)
 
         entitlements = SCRIPT_DIR / "entitlements.plist"
         if entitlements.exists():
