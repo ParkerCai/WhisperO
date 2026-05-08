@@ -152,38 +152,145 @@ Dictionary file location:
 
 - `~/.whispero/dictionary.txt`
 
-## How It Works
+## Architecture
 
-### Local mode (default)
+WhisperO is a single-process Python desktop app. `app.py` orchestrates a global hotkey listener, a system tray, and per-dictation worker threads. Audio is captured at 16 kHz mono via `sounddevice`. Transcription runs locally (faster-whisper / CTranslate2) by default; optionally it can call out to a `whisper.cpp` HTTP server with automatic fallback to local. The result is pasted into the active window via a save → copy → ⌘V/Ctrl+V → restore dance so the user's clipboard is preserved.
 
-```text
-hold hotkey
-   ↓
-record mic audio
-   ↓
-transcribe with local faster-whisper model
-   ↓
-receive text
-   ↓
-paste at cursor
-   ↓
-restore original clipboard
+### 1. Components
+
+```mermaid
+flowchart LR
+    subgraph UI["UI / Entry"]
+      MAIN["__main__.py<br/>freeze_support + dispatch"]
+      APP["app.py<br/>hotkey listener · tray UI · orchestrator"]
+    end
+
+    subgraph IO["I/O Layer"]
+      AUDIO["audio.py<br/>sounddevice 16 kHz mono int16<br/>RecorderState + lock"]
+      CLIP["clipboard.py<br/>save → copy → ⌘V/Ctrl+V → restore"]
+      SND["sounds.py<br/>start/stop WAV cues"]
+      DICT["dictionary.py<br/>~/.whispero/dictionary.txt → ASR prompt"]
+    end
+
+    subgraph CFG["Config"]
+      CONFIG["config.py<br/>~/.whispero/config.json + env overrides"]
+    end
+
+    subgraph ASR["Transcription"]
+      TRANS["transcribe.py<br/>backend router"]
+      LOCAL["faster-whisper<br/>WhisperModel · CTranslate2<br/>~/.whispero/models/"]
+      SERVER["whisper.cpp HTTP<br/>POST /inference multipart<br/>3s connect / 30s read"]
+    end
+
+    subgraph LLM["Optional Rewrite"]
+      RW["rewrite.py<br/>OpenAI-compatible /v1/chat/completions"]
+    end
+
+    MAIN --> APP
+    APP -->|reads| CONFIG
+    APP -->|register hotkey| AUDIO
+    APP -->|on press| SND
+    APP -->|load prompt| DICT
+    APP -->|spawn worker thread| TRANS
+    APP -->|paste result| CLIP
+    APP -->|optional cleanup| RW
+
+    TRANS -->|backend=local| LOCAL
+    TRANS -->|backend=server| SERVER
+    SERVER -.->|all servers fail| LOCAL
 ```
 
-### Server mode (optional)
+### 2. Runtime flow — hotkey → paste
 
-```text
-hold hotkey
-   ↓
-record mic audio
-   ↓
-send WAV to whisper.cpp /inference
-   ↓
-receive text
-   ↓
-paste at cursor
-   ↓
-restore original clipboard
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant L as pynput Listener<br/>(daemon)
+    participant A as app.py<br/>(main)
+    participant R as Recorder<br/>(sounddevice cb)
+    participant T as Worker Thread<br/>(per dictation)
+    participant B as transcribe.py
+    participant E as ASR Engine<br/>(local · server)
+    participant W as rewrite.py<br/>(optional)
+    participant C as clipboard.py
+    participant OS as Active Window
+
+    U->>L: hold hotkey (e.g. ⌘+Ctrl)
+    L->>A: on_press → trigger_keys ⊂ keys_held
+    A->>R: start_recording(state)
+    A->>A: play start.wav (bg thread)
+    par async capture
+      R-->>R: 16 kHz mono int16 chunks<br/>append under lock
+    end
+    U->>L: release hotkey
+    L->>A: on_release
+    A->>R: stop_recording → WAV BytesIO
+    A->>A: play stop.wav (bg thread)
+    A->>T: spawn daemon thread
+    T->>B: transcribe(wav, prompt=dictionary)
+    alt backend = local
+      B->>E: WhisperModel.transcribe(initial_prompt=…)
+      E-->>B: text
+    else backend = server
+      B->>E: POST /inference (multipart wav)
+      alt server ok
+        E-->>B: text
+      else timeout / 5xx
+        B->>B: try fallback_servers[]
+        B->>E: local fallback
+        E-->>B: text
+      end
+    end
+    B-->>T: text
+    opt rewrite enabled
+      T->>W: POST /v1/chat/completions
+      W-->>T: cleaned text
+    end
+    T->>C: paste_text(text)
+    C->>C: save current clipboard
+    C->>C: pyperclip.copy(text)
+    C->>OS: pynput ⌘V / Ctrl+V
+    C->>C: 50 ms wait → restore clipboard
+    OS-->>U: text appears in active app
+```
+
+### 3. Backend routing & fallback
+
+```mermaid
+flowchart TD
+    START(["transcribe(wav, prompt)"]) --> CHECK{"config.backend"}
+
+    CHECK -->|local| LOCAL_PATH
+    CHECK -->|server| SERVER_PATH
+
+    subgraph LOCAL_PATH["Local path"]
+      direction TB
+      LM{"_model loaded?"}
+      LM -->|no| LOAD["WhisperModel(model_size,<br/>device=auto, compute=auto)<br/>cache: ~/.whispero/models/"]
+      LM -->|yes| RUN
+      LOAD --> RUN["model.transcribe(<br/>  initial_prompt=dictionary,<br/>  beam_size=5)"]
+      PYI{"PyInstaller .exe?"}
+      LOAD --> PYI
+      PYI -->|yes| FORCE_CPU["force device=cpu<br/>(CT2 CUDA segfault workaround)"]
+      FORCE_CPU --> RUN
+    end
+
+    subgraph SERVER_PATH["Server path (whisper.cpp)"]
+      direction TB
+      LASTOK{"_last_working_server set?"}
+      LASTOK -->|yes| TRY1["POST {server}/inference<br/>multipart: file + prompt<br/>response_format=text<br/>timeout 3s/30s"]
+      LASTOK -->|no| TRY1
+      TRY1 -->|2xx| OK["text"]
+      TRY1 -->|fail| FB{"fallback_servers[]<br/>more entries?"}
+      FB -->|yes| TRY1
+      FB -->|no| LOCAL_FB["⚠ all servers down<br/>→ run local backend"]
+      LOCAL_FB --> RUN
+    end
+
+    RUN --> OUT["text"]
+    OK --> OUT
+    OUT --> END(["return to worker thread"])
 ```
 
 ## Benchmarks
