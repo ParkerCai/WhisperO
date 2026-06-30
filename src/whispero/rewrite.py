@@ -225,10 +225,8 @@ def _apply_spoken_punctuation(text: str) -> str:
         (r"\bquestion mark\b", "?"),
         (r"\bexclamation (?:point|mark)\b", "!"),
         (r"\bfull stop\b", "."),
-        (r"\bperiod\b", "."),
         (r"\bcomma\b", ","),
         (r"\bsemicolon\b", ";"),
-        (r"\bcolon\b", ":"),
     ]
 
     rewritten = text
@@ -301,7 +299,7 @@ def _load_model(rewrite_config: dict[str, Any]):
 
     context_window = _coerce_int(rewrite_config.get("context_window"), 2048, minimum=512)
     threads = _coerce_int(rewrite_config.get("threads"), 0, minimum=0)
-    gpu_layers = _coerce_int(rewrite_config.get("gpu_layers"), 0)
+    gpu_layers = _coerce_int(rewrite_config.get("gpu_layers"), -1)
     key = (str(model_path.resolve()), context_window, threads, gpu_layers)
 
     if _llm is not None and _llm_key == key:

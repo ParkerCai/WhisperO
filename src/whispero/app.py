@@ -146,6 +146,7 @@ def create_tray_icon():
         open_dictionary()
 
     rewrite_download_active = False
+    rewrite_download_lock = threading.Lock()
 
     def get_rewrite_config() -> dict:
         rewrite_config = config.get("rewrite", {})
@@ -158,15 +159,18 @@ def create_tray_icon():
         return bool(get_rewrite_config().get("enabled"))
 
     def rewrite_label(item):
-        if rewrite_download_active:
+        with rewrite_download_lock:
+            rewrite_is_preparing = rewrite_download_active
+        if rewrite_is_preparing:
             return "Rewrite: Preparing..."
         return "Rewrite: On" if rewrite_enabled() else "Rewrite: Off"
 
     def on_toggle_rewrite(icon, item):
         nonlocal rewrite_download_active
         rewrite_config = get_rewrite_config()
-        if rewrite_download_active:
-            return
+        with rewrite_download_lock:
+            if rewrite_download_active:
+                return
 
         if bool(rewrite_config.get("enabled")):
             rewrite_config["enabled"] = False
@@ -175,11 +179,15 @@ def create_tray_icon():
             icon.update_menu()
             return
 
+        with rewrite_download_lock:
+            if rewrite_download_active:
+                return
+            rewrite_download_active = True
+        icon.update_menu()
+
         def enable_rewrite():
             nonlocal rewrite_download_active
             try:
-                rewrite_download_active = True
-                icon.update_menu()
                 ensure_rewrite_runtime()
                 model_path = ensure_rewrite_model(rewrite_config)
                 rewrite_config["enabled"] = True
@@ -198,7 +206,8 @@ def create_tray_icon():
                 save_rewrite_enabled(False)
                 print(f"[error] Failed to enable rewrite: {err}")
             finally:
-                rewrite_download_active = False
+                with rewrite_download_lock:
+                    rewrite_download_active = False
                 icon.update_menu()
 
         threading.Thread(target=enable_rewrite, daemon=True).start()

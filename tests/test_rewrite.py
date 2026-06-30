@@ -1,21 +1,28 @@
 from __future__ import annotations
 
+import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest import mock
 
-from whispero.config import _normalize
+from whispero import config as config_module
+from whispero.config import _apply_env, _normalize
 from whispero import rewrite
 
 
 class RewriteHelperTests(unittest.TestCase):
     def test_spoken_punctuation_is_normalized_before_model(self):
-        text = "hello comma world period new line are you there question mark"
+        text = "hello comma world full stop new line are you there question mark"
         self.assertEqual(
             rewrite._apply_spoken_punctuation(text),
             "hello, world.\nare you there?",
         )
+
+    def test_ambiguous_period_and_colon_are_not_rule_rewritten(self):
+        text = "the jurassic period ended before the colon cancer screening"
+        self.assertEqual(rewrite._apply_spoken_punctuation(text), text)
 
     def test_thinking_and_labels_are_stripped(self):
         text = '<think>reasoning goes here</think> Rewritten text: "Hello, world."'
@@ -138,6 +145,45 @@ class RewriteHelperTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "not bundled"):
                 rewrite.ensure_rewrite_runtime()
             mock_run.assert_not_called()
+
+    def test_load_model_defaults_to_gpu_offload(self):
+        fake_llama = types.SimpleNamespace(Llama=mock.Mock(return_value=object()))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model_path = Path(tmpdir) / "model.gguf"
+            model_path.write_bytes(b"model")
+            with (
+                mock.patch.object(rewrite, "_llm", None),
+                mock.patch.object(rewrite, "_llm_key", None),
+                mock.patch.object(rewrite, "ensure_rewrite_runtime"),
+                mock.patch.dict(sys.modules, {"llama_cpp": fake_llama}),
+            ):
+                rewrite._load_model({"model_path": str(model_path)})
+                self.assertEqual(fake_llama.Llama.call_args.kwargs["n_gpu_layers"], -1)
+
+
+class RewriteConfigTests(unittest.TestCase):
+    def test_rewrite_env_numeric_values_are_coerced(self):
+        env = {
+            "WHISPERO_REWRITE_CONTEXT_WINDOW": "4096",
+            "WHISPERO_REWRITE_MAX_TOKENS": "96",
+            "WHISPERO_REWRITE_TEMPERATURE": "0.35",
+            "WHISPERO_REWRITE_THREADS": "4",
+            "WHISPERO_REWRITE_GPU_LAYERS": "-1",
+        }
+        with mock.patch.dict(config_module.os.environ, env, clear=True):
+            rewrite_config = _apply_env(_normalize({}))["rewrite"]
+
+        self.assertEqual(rewrite_config["context_window"], 4096)
+        self.assertEqual(rewrite_config["max_tokens"], 96)
+        self.assertEqual(rewrite_config["temperature"], 0.35)
+        self.assertEqual(rewrite_config["threads"], 4)
+        self.assertEqual(rewrite_config["gpu_layers"], -1)
+
+        self.assertIs(type(rewrite_config["context_window"]), int)
+        self.assertIs(type(rewrite_config["max_tokens"]), int)
+        self.assertIs(type(rewrite_config["temperature"]), float)
+        self.assertIs(type(rewrite_config["threads"]), int)
+        self.assertIs(type(rewrite_config["gpu_layers"]), int)
 
 
 if __name__ == "__main__":

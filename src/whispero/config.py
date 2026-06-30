@@ -169,25 +169,45 @@ def _apply_env(config: dict[str, Any]) -> dict[str, Any]:
     if env_rewrite_prompt:
         rewrite["prompt"] = env_rewrite_prompt
 
+    rewrite_defaults = DEFAULTS["rewrite"]
     env_rewrite_context_window = os.environ.get("WHISPERO_REWRITE_CONTEXT_WINDOW")
     if env_rewrite_context_window:
-        rewrite["context_window"] = env_rewrite_context_window
+        rewrite["context_window"] = _coerce_int(
+            env_rewrite_context_window,
+            _coerce_int(rewrite.get("context_window"), rewrite_defaults["context_window"], minimum=512),
+            minimum=512,
+        )
 
     env_rewrite_max_tokens = os.environ.get("WHISPERO_REWRITE_MAX_TOKENS")
     if env_rewrite_max_tokens:
-        rewrite["max_tokens"] = env_rewrite_max_tokens
+        rewrite["max_tokens"] = _coerce_int(
+            env_rewrite_max_tokens,
+            _coerce_int(rewrite.get("max_tokens"), rewrite_defaults["max_tokens"], minimum=1),
+            minimum=1,
+        )
 
     env_rewrite_temperature = os.environ.get("WHISPERO_REWRITE_TEMPERATURE")
     if env_rewrite_temperature:
-        rewrite["temperature"] = env_rewrite_temperature
+        rewrite["temperature"] = _coerce_float(
+            env_rewrite_temperature,
+            _coerce_float(rewrite.get("temperature"), rewrite_defaults["temperature"], minimum=0.0),
+            minimum=0.0,
+        )
 
     env_rewrite_threads = os.environ.get("WHISPERO_REWRITE_THREADS")
     if env_rewrite_threads:
-        rewrite["threads"] = env_rewrite_threads
+        rewrite["threads"] = _coerce_int(
+            env_rewrite_threads,
+            _coerce_int(rewrite.get("threads"), rewrite_defaults["threads"], minimum=0),
+            minimum=0,
+        )
 
     env_rewrite_gpu_layers = os.environ.get("WHISPERO_REWRITE_GPU_LAYERS")
     if env_rewrite_gpu_layers:
-        rewrite["gpu_layers"] = env_rewrite_gpu_layers
+        rewrite["gpu_layers"] = _coerce_int(
+            env_rewrite_gpu_layers,
+            _coerce_int(rewrite.get("gpu_layers"), rewrite_defaults["gpu_layers"]),
+        )
 
     updated["rewrite"] = rewrite
 
