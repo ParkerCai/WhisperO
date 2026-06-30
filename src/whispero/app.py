@@ -12,12 +12,13 @@ from pynput import keyboard
 
 from .audio import RecorderState, start_recording, stop_recording
 from .clipboard import paste_text
-from .config import load_config, save_config_value
+from .config import load_config, save_config_value, save_rewrite_config, save_rewrite_enabled
 from .dictionary import load_dictionary, open_dictionary
+from .rewrite import ensure_rewrite_model, ensure_rewrite_runtime, rewrite_text, warm_rewrite_model
 from .sounds import play_sound
 from .transcribe import transcribe
 
-signal.signal(signal.SIGINT, lambda *_: (print("\n  😮 Stopping WhisperO..."), os._exit(0)))
+signal.signal(signal.SIGINT, lambda *_: (print("\n[info] Stopping WhisperO..."), os._exit(0)))
 
 config = load_config()
 state = RecorderState()
@@ -74,7 +75,7 @@ def get_trigger_keys() -> set:
         if name.lower() in KEY_MAP:
             keys.add(KEY_MAP[name.lower()])
         else:
-            print(f"  ⚠️  Unknown key: {name}")
+            print(f"[warn] Unknown key: {name}")
     return keys
 
 
@@ -91,11 +92,12 @@ def on_hotkey_release() -> None:
         prompt = load_dictionary(seed_path=_dictionary_seed_path())
         text = transcribe(audio_buf=audio_buf, config=config, prompt=prompt)
         if text:
-            print(f"  📝 \"{text}\"")
+            text = rewrite_text(text, config)
+            print(f'Transcript: "{text}"')
             paste_text(text)
-            print("  ✅ Pasted!")
+            print("[ok] Pasted.")
         else:
-            print("  ⚠️  No transcription returned")
+            print("[warn] No transcription returned")
 
     threading.Thread(target=do_transcribe, daemon=True).start()
 
@@ -106,11 +108,11 @@ def create_tray_icon():
         import pystray
         from PIL import Image, ImageDraw
     except ImportError:
-        print("  ⚠️  pystray/Pillow not installed, running without tray icon")
+        print("[warn] pystray/Pillow not installed, running without tray icon")
         return None
 
     def make_icon():
-        # Try to load the 😮 icon from bundled or project icons
+        # Try to load the app icon from bundled or project icons.
         icon_paths = [
             _bundle_dir() / "icons" / "icon_128.png",
             _bundle_dir() / "icons" / "icon.png",
@@ -120,7 +122,7 @@ def create_tray_icon():
         for p in icon_paths:
             if p.exists():
                 return Image.open(p).resize((64, 64), Image.LANCZOS)
-        # Fallback: 😮 face (yellow circle, two eyes, open mouth)
+        # Fallback: yellow face icon.
         img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
         draw.ellipse([4, 4, 60, 60], fill="#FFD93D", outline="#2D2D2D", width=3)
@@ -134,7 +136,7 @@ def create_tray_icon():
     def on_toggle(icon, item):
         state.enabled = not state.enabled
         status = "Enabled" if state.enabled else "Disabled"
-        print(f"  🔄 Dictation {status}")
+        print(f"[info] Dictation {status}")
 
     def on_quit(icon, item):
         icon.stop()
@@ -143,29 +145,96 @@ def create_tray_icon():
     def on_edit_dict(icon, item):
         open_dictionary()
 
+    rewrite_download_active = False
+    rewrite_download_lock = threading.Lock()
+
+    def get_rewrite_config() -> dict:
+        rewrite_config = config.get("rewrite", {})
+        if not isinstance(rewrite_config, dict):
+            rewrite_config = {}
+            config["rewrite"] = rewrite_config
+        return rewrite_config
+
+    def rewrite_enabled() -> bool:
+        return bool(get_rewrite_config().get("enabled"))
+
+    def rewrite_label(item):
+        with rewrite_download_lock:
+            rewrite_is_preparing = rewrite_download_active
+        if rewrite_is_preparing:
+            return "Rewrite: Preparing..."
+        return "Rewrite: On" if rewrite_enabled() else "Rewrite: Off"
+
+    def on_toggle_rewrite(icon, item):
+        nonlocal rewrite_download_active
+        rewrite_config = get_rewrite_config()
+        with rewrite_download_lock:
+            if rewrite_download_active:
+                return
+
+        if bool(rewrite_config.get("enabled")):
+            rewrite_config["enabled"] = False
+            save_rewrite_enabled(False)
+            print("[info] Rewrite disabled")
+            icon.update_menu()
+            return
+
+        with rewrite_download_lock:
+            if rewrite_download_active:
+                return
+            rewrite_download_active = True
+        icon.update_menu()
+
+        def enable_rewrite():
+            nonlocal rewrite_download_active
+            try:
+                ensure_rewrite_runtime()
+                model_path = ensure_rewrite_model(rewrite_config)
+                if not rewrite_config.get("model_path"):
+                    rewrite_config["model_path"] = str(model_path)
+                warm_rewrite_model(rewrite_config)
+                rewrite_config["enabled"] = True
+                save_rewrite_config(
+                    {
+                        "enabled": True,
+                        "model_path": rewrite_config["model_path"],
+                    }
+                )
+                print(f"[ok] Rewrite enabled ({Path(rewrite_config['model_path']).name})")
+            except Exception as err:
+                rewrite_config["enabled"] = False
+                save_rewrite_enabled(False)
+                print(f"[error] Failed to enable rewrite: {err}")
+            finally:
+                with rewrite_download_lock:
+                    rewrite_download_active = False
+                icon.update_menu()
+
+        threading.Thread(target=enable_rewrite, daemon=True).start()
+
     def make_model_callback(model_name):
         def callback(icon, item):
             if config.get("model") == model_name:
                 return
             config["model"] = model_name
             save_config_value("model", model_name)
-            print(f"  🔄 Switching to {model_name}...")
+            print(f"[info] Switching to {model_name}...")
             if config.get("backend", "local") == "local":
                 try:
                     from .transcribe import get_model, is_model_cached
                     if not is_model_cached(model_name):
-                        print(f"  ⏳ Downloading {model_name}...")
+                        print(f"[info] Downloading {model_name}...")
                     get_model(model_name)
-                    print(f"  ✓ {model_name} ready")
+                    print(f"[ok] {model_name} ready")
                 except Exception as e:
-                    print(f"  ❌ Failed to load {model_name}: {e}")
+                    print(f"[error] Failed to load {model_name}: {e}")
         return callback
 
     def is_current_model(model_name):
         return lambda item: config.get("model", "large-v3") == model_name
 
     if platform.system() == "Darwin":
-        hotkey_label = "Hold ⌃⌘ to dictate"
+        hotkey_label = "Hold Ctrl+Cmd to dictate"
     else:
         hotkey_label = "Hold Win+Ctrl to dictate"
 
@@ -186,7 +255,7 @@ def create_tray_icon():
             config["server"] = url
             save_config_value("backend", "server")
             save_config_value("server", url)
-            print(f"  🔄 Server: {url}")
+            print(f"[info] Server: {url}")
             icon.update_menu()
         return callback
 
@@ -197,7 +266,7 @@ def create_tray_icon():
         def callback(icon, item):
             config["backend"] = backend_name
             save_config_value("backend", backend_name)
-            print(f"  🔄 Backend: {backend_name}")
+            print(f"[info] Backend: {backend_name}")
             icon.update_menu()
         return callback
 
@@ -207,7 +276,7 @@ def create_tray_icon():
     menu = pystray.Menu(
         pystray.MenuItem(hotkey_label, None, enabled=False),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem(lambda item: "✓ Enabled" if state.enabled else "  Disabled", on_toggle),
+        pystray.MenuItem(lambda item: "Enabled: On" if state.enabled else "Enabled: Off", on_toggle),
         pystray.MenuItem("Select Backend", pystray.Menu(
             pystray.MenuItem(
                 "Local", make_backend_callback("local"),
@@ -221,6 +290,10 @@ def create_tray_icon():
         pystray.MenuItem(
             "Select Model", model_menu,
             enabled=lambda item: config.get("backend", "local") == "local"
+        ),
+        pystray.MenuItem(
+            rewrite_label,
+            on_toggle_rewrite,
         ),
         pystray.MenuItem("Edit Dictionary", on_edit_dict),
         pystray.Menu.SEPARATOR,
@@ -238,27 +311,27 @@ def main() -> None:
         try:
             from .transcribe import get_model, is_model_cached
             model_name = config.get("model", "large-v3")
-            print(f"😮 WhisperO (local, model: {model_name})")
+            print(f"WhisperO (local, model: {model_name})")
             if not is_model_cached(model_name):
-                print("  ⏳ Downloading model (this may take a few minutes)...")
+                print("[info] Downloading model (this may take a few minutes)...")
             else:
-                print("  ⏳ Loading model...")
+                print("[info] Loading model...")
             get_model(model_name)
-            print("  ✓ Model ready")
+            print("[ok] Model ready")
         except (ImportError, RuntimeError):
-            print("  ⚠️  faster-whisper not available, falling back to server mode")
+            print("[warn] faster-whisper not available, falling back to server mode")
             backend = "server"
             config["backend"] = "server"
     if backend == "server":
-        print(f"🎤 WhisperO (server: {config['server']})")
+        print(f"WhisperO (server: {config['server']})")
         try:
             response = requests.get(f"{config['server']}/health", timeout=5)
             if response.json().get("status") == "ok":
-                print("  ✓ Server is healthy")
+                print("[ok] Server is healthy")
             else:
-                print("  ⚠️  Unexpected server response")
+                print("[warn] Unexpected server response")
         except Exception:
-            print("  ❌ Cannot reach server, will retry on each recording")
+            print("[error] Cannot reach server, will retry on each recording")
 
     trigger_keys = get_trigger_keys()
     keys_held = set()
@@ -267,11 +340,11 @@ def main() -> None:
     is_mac = platform.system() == "Darwin"
     if is_mac:
         key_names = config["hotkey"].get("mac", ["cmd", "ctrl"])
-        print(f"🎹 Hotkey: hold [{' + '.join(k.title() for k in key_names)}] to record")
+        print(f"Hotkey: hold [{' + '.join(k.title() for k in key_names)}] to record")
     else:
         key_names = config["hotkey"].get("windows", ["win", "ctrl"])
-        print(f"🎹 Hotkey: hold [{' + '.join(k.title() for k in key_names)}] to record")
-    print("🔇 Press Ctrl+C to quit\n")
+        print(f"Hotkey: hold [{' + '.join(k.title() for k in key_names)}] to record")
+    print("Press Ctrl+C to quit\n")
 
     def on_press(key):
         nonlocal recording_active
@@ -301,7 +374,7 @@ def main() -> None:
                 tray_thread.join()
             except KeyboardInterrupt:
                 tray.stop()
-                print("\n👋 Bye!")
+                print("\nBye.")
         else:
             # macOS/Linux: tray must run on main thread (AppKit requirement)
             tray.run()
@@ -309,7 +382,7 @@ def main() -> None:
         try:
             listener.join()
         except KeyboardInterrupt:
-            print("\n👋 Bye!")
+            print("\nBye.")
 
 
 if __name__ == "__main__":

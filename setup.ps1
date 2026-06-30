@@ -1,5 +1,5 @@
 # WhisperO setup script for Windows
-# Usage: Right-click → Run with PowerShell
+# Usage: Right-click > Run with PowerShell
 #   or:  powershell -ExecutionPolicy Bypass -File setup.ps1
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -9,14 +9,14 @@ $VenvDir = "$WhisperOHome\venv"
 $MinPython = [version]"3.10"
 
 # --- Helpers ---
-function Info($msg)  { Write-Host "  ▸ " -ForegroundColor Cyan -NoNewline; Write-Host $msg }
-function Ok($msg)    { Write-Host "  ✓ " -ForegroundColor Green -NoNewline; Write-Host $msg }
+function Info($msg)  { Write-Host "  [info] " -ForegroundColor Cyan -NoNewline; Write-Host $msg }
+function Ok($msg)    { Write-Host "  [ok] " -ForegroundColor Green -NoNewline; Write-Host $msg }
 function Warn($msg)  { Write-Host "  ! " -ForegroundColor Yellow -NoNewline; Write-Host $msg }
-function Fail($msg)  { Write-Host "  ✗ " -ForegroundColor Red -NoNewline; Write-Host $msg; exit 1 }
+function Fail($msg)  { Write-Host "  [error] " -ForegroundColor Red -NoNewline; Write-Host $msg; exit 1 }
 
 Write-Host ""
-Write-Host "  😮 WhisperO Setup" -ForegroundColor White
-Write-Host "  ─────────────────────────────"
+Write-Host "  WhisperO Setup" -ForegroundColor White
+Write-Host "  -----------------------------"
 Write-Host ""
 
 # --- Check Python ---
@@ -112,7 +112,7 @@ if ($userPath -notlike "*$binDir*") {
 
 # --- CUDA info ---
 Write-Host ""
-Write-Host "  💡 GPU Acceleration (optional)" -ForegroundColor Yellow
+Write-Host "  GPU Acceleration (optional)" -ForegroundColor Yellow
 Write-Host "     WhisperO works on CPU out of the box."
 Write-Host "     For faster GPU inference with NVIDIA GPUs, install:"
 Write-Host "     - CUDA Toolkit 12: https://developer.nvidia.com/cuda-downloads"
@@ -121,7 +121,7 @@ Write-Host ""
 
 # --- Done ---
 Write-Host ""
-Write-Host "  😮 WhisperO is ready!" -ForegroundColor Green
+Write-Host "  WhisperO is ready!" -ForegroundColor Green
 Write-Host ""
 Write-Host "     Run it:    whispero"
 Write-Host "     Hotkey:    Win + Ctrl"
