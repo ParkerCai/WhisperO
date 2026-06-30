@@ -23,6 +23,11 @@ dependencies = [
   "pyobjc-framework-Cocoa; platform_system == 'Darwin'",
 ]
 
+[project.optional-dependencies]
+rewrite = [
+  "llama-cpp-python>=0.3.32",
+]
+
 [project.urls]
 Homepage = "https://github.com/parkercai/whispero"
 Issues = "https://github.com/parkercai/whispero/issues"

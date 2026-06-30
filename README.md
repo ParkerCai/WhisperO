@@ -18,6 +18,7 @@ On first run, WhisperO downloads a speech model to `~/.whispero/models/`.
 - **Auto-paste at cursor** without losing clipboard contents
 - **Local transcription** with faster-whisper (default), no server needed
 - **Optional remote server** via whisper.cpp for multi-machine setups
+- **Optional local rewrite** with a GGUF text model via llama.cpp
 - **Cross-platform** - macOS, Windows, Linux
 - **Custom dictionary** for names and project terms
 - **Start/stop sound feedback**
@@ -117,6 +118,14 @@ Supported environment variables:
 - `WHISPERO_BACKEND=local|server`
 - `WHISPERO_MODEL=large-v3|medium|small|base|tiny`
 - `WHISPERO_SERVER=http://host:8080`
+- `WHISPERO_REWRITE=true|false`
+- `WHISPERO_REWRITE_MODEL_PATH=/path/to/model.gguf`
+- `WHISPERO_REWRITE_PROMPT=...`
+- `WHISPERO_REWRITE_CONTEXT_WINDOW=2048`
+- `WHISPERO_REWRITE_MAX_TOKENS=192`
+- `WHISPERO_REWRITE_TEMPERATURE=0.2`
+- `WHISPERO_REWRITE_THREADS=0`
+- `WHISPERO_REWRITE_GPU_LAYERS=-1`
 
 Default values:
 
@@ -129,7 +138,17 @@ Default values:
     "windows": ["win", "ctrl"],
     "mac": ["cmd", "ctrl"]
   },
-  "sounds": true
+  "sounds": true,
+  "rewrite": {
+    "enabled": false,
+    "model_path": "",
+    "prompt": "Rewrite the dictated text to fix transcription mistakes, grammar, punctuation, casing, spacing, and spoken punctuation words such as comma, period, question mark, and new line while preserving the speaker's meaning. Remove clear false starts and self-correction markers while keeping the final intended meaning. Do not remove meaningful words just because they are conversational. Return only the rewritten text. Do not include explanations, labels, markdown, or reasoning.",
+    "context_window": 2048,
+    "max_tokens": 192,
+    "temperature": 0.2,
+    "threads": 0,
+    "gpu_layers": -1
+  }
 }
 ```
 
@@ -144,13 +163,73 @@ Example `~/.whispero/config.json`:
     "windows": ["win", "ctrl"],
     "mac": ["cmd", "ctrl"]
   },
-  "sounds": true
+  "sounds": true,
+  "rewrite": {
+    "enabled": false,
+    "model_path": "C:\\Users\\you\\.whispero\\rewrite-models\\model.gguf"
+  }
 }
 ```
 
 Dictionary file location:
 
 - `~/.whispero/dictionary.txt`
+
+### Optional Rewrite
+
+Rewrite runs after transcription and before paste. It uses a local GGUF text model through `llama-cpp-python`; it does not send text or audio to a remote API. Rewrite is intended for GPU or Apple Metal systems. If local rewrite fails, WhisperO pastes the original transcript.
+
+The rewrite runtime and model are not bundled in source installs. When you turn rewrite on from the tray menu, WhisperO installs `llama-cpp-python` into the current Python environment if it is missing, downloads the default model into `~/.whispero/rewrite-models/`, then enables rewrite. You can also set `WHISPERO_REWRITE_MODEL_PATH` or `rewrite.model_path` to use your own local `.gguf` file.
+
+You can preinstall the optional local rewrite runtime:
+
+```bash
+pip install ".[rewrite]"
+```
+
+On Windows with NVIDIA GPUs, WhisperO uses the llama-cpp-python CUDA wheel index when it installs the runtime automatically. To install it manually:
+
+```powershell
+pip install "llama-cpp-python>=0.3.32" --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124
+```
+
+On Apple Silicon, WhisperO sets the Metal build flag when it installs the runtime automatically. To install it manually:
+
+```bash
+xcode-select --install
+CMAKE_ARGS="-DGGML_METAL=on" pip install -U "llama-cpp-python>=0.3.32" --no-cache-dir
+```
+
+Enable rewrite from the system tray menu. The first enable downloads and prepares the default model:
+
+- Repo: `Qwen/Qwen3-1.7B-GGUF`
+- File: `Qwen3-1.7B-Q8_0.gguf`
+- Size: about 1.83 GB
+- Observed GPU memory increase on an RTX 5090: about 2.8 GB with full layer offload
+
+You can also point WhisperO at a model manually.
+
+PowerShell:
+
+```powershell
+$env:WHISPERO_REWRITE = "true"
+$env:WHISPERO_REWRITE_MODEL_PATH = "$HOME\.whispero\rewrite-models\Qwen3-1.7B-Q8_0.gguf"
+```
+
+macOS / Linux:
+
+```bash
+export WHISPERO_REWRITE=true
+export WHISPERO_REWRITE_MODEL_PATH="$HOME/.whispero/rewrite-models/Qwen3-1.7B-Q8_0.gguf"
+```
+
+To smoke-test rewrite later without recording audio:
+
+```bash
+python -c "from whispero.config import load_config; from whispero.rewrite import rewrite_text; print(rewrite_text('this is a rough dictated sentence without punctuation', load_config()))"
+```
+
+You can turn rewrite off from the system tray menu at any time.
 
 ## Architecture
 
@@ -182,8 +261,8 @@ flowchart LR
       SERVER["whisper.cpp HTTP<br/>POST /inference multipart<br/>3s connect / 30s read"]
     end
 
-    subgraph LLM["Optional Rewrite"]
-      RW["rewrite.py<br/>OpenAI-compatible /v1/chat/completions"]
+    subgraph LLM["Local Rewrite"]
+      RW["rewrite.py<br/>local GGUF text model<br/>llama.cpp"]
     end
 
     MAIN --> APP
@@ -192,8 +271,8 @@ flowchart LR
     APP -->|on press| SND
     APP -->|load prompt| DICT
     APP -->|spawn worker thread| TRANS
+    APP -->|optional rewrite| RW
     APP -->|paste result| CLIP
-    APP -->|optional cleanup| RW
 
     TRANS -->|backend=local| LOCAL
     TRANS -->|backend=server| SERVER
@@ -244,7 +323,7 @@ sequenceDiagram
     end
     B-->>T: text
     opt rewrite enabled
-      T->>W: POST /v1/chat/completions
+      T->>W: local llama.cpp inference
       W-->>T: cleaned text
     end
     T->>C: paste_text(text)
@@ -302,14 +381,23 @@ Transcription speed for a 5-second audio clip using `large-v3`. Times exclude mo
 | RTX 5090 | faster-whisper (local) | 378ms | 390ms |
 | NVIDIA GB10 (DGX Spark) | whisper.cpp (server) | 323ms | 375ms |
 
+Rewrite latency for the default local GGUF model. Download, model load, and warmup time are excluded.
+
+| Model | Runtime | Device | Median | Avg |
+|---|---|---|---:|---:|
+| Qwen3-1.7B-Q8_0 | llama-cpp-python 0.3.32 | RTX 5090 | 52ms | 50ms |
+
 Run your own benchmark:
 
 ```bash
 python benchmark.py                    # local mode
 python benchmark.py --backend server   # server mode
+python benchmark.py --rewrite --runs 10
 ```
 
-Run the benchmark a few times. The first run warms up GPU memory, so later runs are more accurate.
+For rewrite, pass `--rewrite-model` to test a custom `.gguf` file, `--rewrite-sample` to add your own dictated text, and `--hardware` to label the output table.
+
+Run the benchmark a few times. The first transcription run warms up GPU memory; rewrite only reports warm runs.
 
 Got a result? PRs with new hardware numbers are welcome.
 
@@ -321,6 +409,8 @@ WhisperO includes a PyInstaller build script.
 pip install -r requirements.txt
 python build/build.py
 ```
+
+To include local rewrite support in a standalone build, install the rewrite runtime in the build environment before running the build script. The build script bundles `llama-cpp-python` when it is installed; packaged apps do not install Python wheels at runtime.
 
 Output:
 

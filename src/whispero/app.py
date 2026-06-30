@@ -12,8 +12,9 @@ from pynput import keyboard
 
 from .audio import RecorderState, start_recording, stop_recording
 from .clipboard import paste_text
-from .config import load_config, save_config_value
+from .config import load_config, save_config_value, save_rewrite_config, save_rewrite_enabled
 from .dictionary import load_dictionary, open_dictionary
+from .rewrite import ensure_rewrite_model, ensure_rewrite_runtime, rewrite_text, warm_rewrite_model
 from .sounds import play_sound
 from .transcribe import transcribe
 
@@ -91,6 +92,7 @@ def on_hotkey_release() -> None:
         prompt = load_dictionary(seed_path=_dictionary_seed_path())
         text = transcribe(audio_buf=audio_buf, config=config, prompt=prompt)
         if text:
+            text = rewrite_text(text, config)
             print(f'Transcript: "{text}"')
             paste_text(text)
             print("[ok] Pasted.")
@@ -142,6 +144,64 @@ def create_tray_icon():
 
     def on_edit_dict(icon, item):
         open_dictionary()
+
+    rewrite_download_active = False
+
+    def get_rewrite_config() -> dict:
+        rewrite_config = config.get("rewrite", {})
+        if not isinstance(rewrite_config, dict):
+            rewrite_config = {}
+            config["rewrite"] = rewrite_config
+        return rewrite_config
+
+    def rewrite_enabled() -> bool:
+        return bool(get_rewrite_config().get("enabled"))
+
+    def rewrite_label(item):
+        if rewrite_download_active:
+            return "Rewrite: Preparing..."
+        return "Rewrite: On" if rewrite_enabled() else "Rewrite: Off"
+
+    def on_toggle_rewrite(icon, item):
+        nonlocal rewrite_download_active
+        rewrite_config = get_rewrite_config()
+        if rewrite_download_active:
+            return
+
+        if bool(rewrite_config.get("enabled")):
+            rewrite_config["enabled"] = False
+            save_rewrite_enabled(False)
+            print("[info] Rewrite disabled")
+            icon.update_menu()
+            return
+
+        def enable_rewrite():
+            nonlocal rewrite_download_active
+            try:
+                rewrite_download_active = True
+                icon.update_menu()
+                ensure_rewrite_runtime()
+                model_path = ensure_rewrite_model(rewrite_config)
+                rewrite_config["enabled"] = True
+                if not rewrite_config.get("model_path"):
+                    rewrite_config["model_path"] = str(model_path)
+                warm_rewrite_model(rewrite_config)
+                save_rewrite_config(
+                    {
+                        "enabled": True,
+                        "model_path": rewrite_config["model_path"],
+                    }
+                )
+                print(f"[ok] Rewrite enabled ({Path(rewrite_config['model_path']).name})")
+            except Exception as err:
+                rewrite_config["enabled"] = False
+                save_rewrite_enabled(False)
+                print(f"[error] Failed to enable rewrite: {err}")
+            finally:
+                rewrite_download_active = False
+                icon.update_menu()
+
+        threading.Thread(target=enable_rewrite, daemon=True).start()
 
     def make_model_callback(model_name):
         def callback(icon, item):
@@ -221,6 +281,10 @@ def create_tray_icon():
         pystray.MenuItem(
             "Select Model", model_menu,
             enabled=lambda item: config.get("backend", "local") == "local"
+        ),
+        pystray.MenuItem(
+            rewrite_label,
+            on_toggle_rewrite,
         ),
         pystray.MenuItem("Edit Dictionary", on_edit_dict),
         pystray.Menu.SEPARATOR,

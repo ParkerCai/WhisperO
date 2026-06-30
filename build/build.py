@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import platform
 import plistlib
@@ -336,6 +337,15 @@ def build_pyinstaller() -> None:
         "--collect-all",
         "faster_whisper",
     ]
+
+    if importlib.util.find_spec("llama_cpp"):
+        print("  Including llama-cpp-python for local rewrite...")
+        args += [
+            "--hidden-import",
+            "llama_cpp",
+            "--collect-all",
+            "llama_cpp",
+        ]
 
     args.append(str(ENTRY_SCRIPT))
 

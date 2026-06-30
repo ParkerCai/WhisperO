@@ -8,6 +8,9 @@ pyperclip
 pystray
 Pillow
 
+# Optional local rewrite support
+# llama-cpp-python>=0.3.32
+
 # Optional platform clipboard support
 pywin32; platform_system == "Windows"
 # pyobjc (optional, for full clipboard save/restore on macOS)
