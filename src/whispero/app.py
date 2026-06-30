@@ -190,10 +190,10 @@ def create_tray_icon():
             try:
                 ensure_rewrite_runtime()
                 model_path = ensure_rewrite_model(rewrite_config)
-                rewrite_config["enabled"] = True
                 if not rewrite_config.get("model_path"):
                     rewrite_config["model_path"] = str(model_path)
                 warm_rewrite_model(rewrite_config)
+                rewrite_config["enabled"] = True
                 save_rewrite_config(
                     {
                         "enabled": True,
