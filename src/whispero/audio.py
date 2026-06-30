@@ -35,11 +35,11 @@ def start_recording(state: RecorderState, play_sound_fn: Callable[[str], None]) 
         state.audio_chunks = []
 
     play_sound_fn("start")
-    print("🎙️  Recording...")
+    print("Recording...")
 
     def audio_callback(indata, frames, time_info, status):
         if status:
-            print(f"  ⚠️  Audio status: {status}", file=sys.stderr)
+            print(f"[warn] Audio status: {status}", file=sys.stderr)
         with state.lock:
             if state.recording:
                 state.audio_chunks.append(indata.copy())
@@ -76,12 +76,12 @@ def stop_recording(state: RecorderState, play_sound_fn: Callable[[str], None]) -
         state.audio_chunks = []
 
     if not chunks:
-        print("  ⚠️  No audio captured")
+        print("[warn] No audio captured")
         return None
 
     audio_data = np.concatenate(chunks, axis=0)
     duration = len(audio_data) / SAMPLE_RATE
-    print(f"  ✓ Captured {duration:.1f}s of audio")
+    print(f"[ok] Captured {duration:.1f}s of audio")
 
     buf = io.BytesIO()
     with wave.open(buf, "wb") as wf:

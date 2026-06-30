@@ -82,14 +82,14 @@ def get_model(model_size: str = "large-v3"):
         except Exception:
             pass
 
-    print(f"  😮 Model: {model_size} | Device: {device_label}")
+    print(f"[info] Model: {model_size} | Device: {device_label}")
 
     return _model
 
 
 def transcribe_server(audio_buf: io.BytesIO, server: str, prompt: str = "") -> str | None:
     """Send audio to whisper.cpp server and return transcribed text."""
-    print("  📡 Sending to server...")
+    print("[info] Sending to server...")
     try:
         audio_buf.seek(0)
         post_data = {"response_format": "text"}
@@ -105,13 +105,13 @@ def transcribe_server(audio_buf: io.BytesIO, server: str, prompt: str = "") -> s
         resp.raise_for_status()
         return resp.text.strip()
     except requests.ConnectionError:
-        print("  ❌ Cannot reach server.", file=sys.stderr)
+        print("[error] Cannot reach server.", file=sys.stderr)
         return None
     except requests.Timeout:
-        print("  ❌ Server timeout", file=sys.stderr)
+        print("[error] Server timeout", file=sys.stderr)
         return None
     except requests.HTTPError as err:
-        print(f"  ❌ Server error: {err}", file=sys.stderr)
+        print(f"[error] Server error: {err}", file=sys.stderr)
         return None
 
 
@@ -134,7 +134,7 @@ def transcribe_local(audio_buf: io.BytesIO, model_size: str = "large-v3", prompt
             except FileNotFoundError:
                 pass
     except Exception as err:
-        print(f"  ❌ Local transcription error: {err}", file=sys.stderr)
+        print(f"[error] Local transcription error: {err}", file=sys.stderr)
         return None
 
 
@@ -168,9 +168,9 @@ def transcribe(
                 _last_working_server = url
                 return result
 
-        # All servers unreachable — fall back to local
+        # All servers unreachable; fall back to local.
         _last_working_server = None
-        print("  ⚡ All servers unavailable, falling back to local...")
+        print("[info] All servers unavailable, falling back to local...")
         audio_buf.seek(0)
         resolved_model = model_size or cfg.get("model", "large-v3")
         return transcribe_local(audio_buf=audio_buf, model_size=resolved_model, prompt=prompt)

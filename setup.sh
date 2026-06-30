@@ -21,17 +21,17 @@ CYAN='\033[38;5;117m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-info()  { echo -e "${CYAN}▸${NC} $1"; }
-ok()    { echo -e "${GREEN}✓${NC} $1"; }
+info()  { echo -e "${CYAN}[info]${NC} $1"; }
+ok()    { echo -e "${GREEN}[ok]${NC} $1"; }
 warn()  { echo -e "${YELLOW}!${NC} $1"; }
-fail()  { echo -e "${RED}✗${NC} $1"; exit 1; }
+fail()  { echo -e "${RED}[error]${NC} $1"; exit 1; }
 run_without_stdin() {
   "$@" </dev/null
 }
 
 echo ""
-echo -e "${BOLD}😮 WhisperO Setup${NC}"
-echo "─────────────────────────────"
+echo -e "${BOLD}WhisperO Setup${NC}"
+echo "-----------------------------"
 echo ""
 
 # --- Detect OS ---
@@ -216,24 +216,24 @@ fi
 # --- macOS accessibility reminder ---
 if [ "$PLATFORM" = "mac" ]; then
   echo ""
-  echo -e "${YELLOW}⚠  macOS Permissions${NC}"
+  echo -e "${YELLOW}macOS Permissions${NC}"
   echo "   WhisperO needs two permissions to work:"
   echo ""
   echo "   1. ${BOLD}Accessibility${NC} (for keyboard hotkey)"
-  echo "      System Settings → Privacy & Security → Accessibility"
+  echo "      System Settings > Privacy & Security > Accessibility"
   echo "      Add: Terminal (or your terminal app)"
   echo ""
   echo "   2. ${BOLD}Microphone${NC} (for recording)"
-  echo "      macOS will prompt on first use — click Allow"
+  echo "      macOS will prompt on first use - click Allow"
   echo ""
 fi
 
 # --- Done ---
 echo ""
-echo -e "${GREEN}${BOLD}😮 WhisperO is ready!${NC}"
+echo -e "${GREEN}${BOLD}WhisperO is ready!${NC}"
 echo ""
 echo "   Run it:    whispero"
-echo "   Hotkey:    ⌘ + Ctrl (Mac) or Win + Ctrl (Windows)"
+echo "   Hotkey:    Cmd + Ctrl (Mac) or Win + Ctrl (Windows)"
 echo "   Config:    ~/.whispero/config.json"
 echo ""
 echo "   On first run, WhisperO downloads the large-v3 model (~3 GB)."

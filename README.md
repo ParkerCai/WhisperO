@@ -14,11 +14,11 @@ On first run, WhisperO downloads a speech model to `~/.whispero/models/`.
 
 ## Features
 
-- **Hold-to-record hotkey** — `Win`+`Ctrl` on Windows, `⌘`+`Ctrl` on Mac
+- **Hold-to-record hotkey** - `Win`+`Ctrl` on Windows, `Cmd`+`Ctrl` on Mac
 - **Auto-paste at cursor** without losing clipboard contents
 - **Local transcription** with faster-whisper (default), no server needed
 - **Optional remote server** via whisper.cpp for multi-machine setups
-- **Cross-platform** — macOS, Windows, Linux
+- **Cross-platform** - macOS, Windows, Linux
 - **Custom dictionary** for names and project terms
 - **Start/stop sound feedback**
 - **System tray** with model switching, dictionary editor, and quick controls
@@ -61,7 +61,7 @@ The setup script installs Python dependencies and WhisperO in an isolated enviro
    - [CUDA Toolkit 12](https://developer.nvidia.com/cuda-downloads) (includes cuBLAS)
    - [cuDNN 9 for CUDA 12](https://developer.nvidia.com/cudnn)
 
-   Without these, WhisperO still works — just slower.
+   Without these, WhisperO still works - just slower.
 
 3. **Run**
    ```bash
@@ -89,9 +89,9 @@ That is it. WhisperO starts in local mode and uses model `large-v3`.
    nohup python -m whispero &>/dev/null &
    ```
 
-   For login startup, add WhisperO to System Settings → General → Login Items.
+   For login startup, add WhisperO to System Settings > General > Login Items.
 
-> **macOS permissions:** WhisperO needs Accessibility access (for the hotkey) and Microphone access (for recording). Go to System Settings → Privacy & Security to grant these to your terminal app.
+> **macOS permissions:** WhisperO needs Accessibility access (for the hotkey) and Microphone access (for recording). Go to System Settings > Privacy & Security to grant these to your terminal app.
 
 ## Advanced: Remote Server
 
@@ -154,7 +154,7 @@ Dictionary file location:
 
 ## Architecture
 
-WhisperO is a single-process Python desktop app. `app.py` orchestrates a global hotkey listener, a system tray, and per-dictation worker threads. Audio is captured at 16 kHz mono via `sounddevice`. Transcription runs locally (faster-whisper / CTranslate2) by default; optionally it can call out to a `whisper.cpp` HTTP server with automatic fallback to local. The result is pasted into the active window via a save → copy → ⌘V/Ctrl+V → restore dance so the user's clipboard is preserved.
+WhisperO is a single-process Python desktop app. `app.py` orchestrates a global hotkey listener, a system tray, and per-dictation worker threads. Audio is captured at 16 kHz mono via `sounddevice`. Transcription runs locally (faster-whisper / CTranslate2) by default; optionally it can call out to a `whisper.cpp` HTTP server with automatic fallback to local. The result is pasted into the active window via a save -> copy -> Cmd+V/Ctrl+V -> restore dance so the user's clipboard is preserved.
 
 ### 1. Components
 
@@ -162,14 +162,14 @@ WhisperO is a single-process Python desktop app. `app.py` orchestrates a global 
 flowchart LR
     subgraph UI["UI / Entry"]
       MAIN["__main__.py<br/>freeze_support + dispatch"]
-      APP["app.py<br/>hotkey listener · tray UI · orchestrator"]
+      APP["app.py<br/>hotkey listener - tray UI - orchestrator"]
     end
 
     subgraph IO["I/O Layer"]
       AUDIO["audio.py<br/>sounddevice 16 kHz mono int16<br/>RecorderState + lock"]
-      CLIP["clipboard.py<br/>save → copy → ⌘V/Ctrl+V → restore"]
+      CLIP["clipboard.py<br/>save -> copy -> Cmd+V/Ctrl+V -> restore"]
       SND["sounds.py<br/>start/stop WAV cues"]
-      DICT["dictionary.py<br/>~/.whispero/dictionary.txt → ASR prompt"]
+      DICT["dictionary.py<br/>~/.whispero/dictionary.txt -> ASR prompt"]
     end
 
     subgraph CFG["Config"]
@@ -178,7 +178,7 @@ flowchart LR
 
     subgraph ASR["Transcription"]
       TRANS["transcribe.py<br/>backend router"]
-      LOCAL["faster-whisper<br/>WhisperModel · CTranslate2<br/>~/.whispero/models/"]
+      LOCAL["faster-whisper<br/>WhisperModel - CTranslate2<br/>~/.whispero/models/"]
       SERVER["whisper.cpp HTTP<br/>POST /inference multipart<br/>3s connect / 30s read"]
     end
 
@@ -200,7 +200,7 @@ flowchart LR
     SERVER -.->|all servers fail| LOCAL
 ```
 
-### 2. Runtime flow — hotkey → paste
+### 2. Runtime flow - hotkey -> paste
 
 ```mermaid
 sequenceDiagram
@@ -211,13 +211,13 @@ sequenceDiagram
     participant R as Recorder<br/>(sounddevice cb)
     participant T as Worker Thread<br/>(per dictation)
     participant B as transcribe.py
-    participant E as ASR Engine<br/>(local · server)
+    participant E as ASR Engine<br/>(local - server)
     participant W as rewrite.py<br/>(optional)
     participant C as clipboard.py
     participant OS as Active Window
 
-    U->>L: hold hotkey (e.g. ⌘+Ctrl)
-    L->>A: on_press → trigger_keys ⊂ keys_held
+    U->>L: hold hotkey (e.g. Cmd+Ctrl)
+    L->>A: on_press -> trigger_keys subset of keys_held
     A->>R: start_recording(state)
     A->>A: play start.wav (bg thread)
     par async capture
@@ -225,12 +225,12 @@ sequenceDiagram
     end
     U->>L: release hotkey
     L->>A: on_release
-    A->>R: stop_recording → WAV BytesIO
+    A->>R: stop_recording -> WAV BytesIO
     A->>A: play stop.wav (bg thread)
     A->>T: spawn daemon thread
     T->>B: transcribe(wav, prompt=dictionary)
     alt backend = local
-      B->>E: WhisperModel.transcribe(initial_prompt=…)
+      B->>E: WhisperModel.transcribe(initial_prompt=...)
       E-->>B: text
     else backend = server
       B->>E: POST /inference (multipart wav)
@@ -250,8 +250,8 @@ sequenceDiagram
     T->>C: paste_text(text)
     C->>C: save current clipboard
     C->>C: pyperclip.copy(text)
-    C->>OS: pynput ⌘V / Ctrl+V
-    C->>C: 50 ms wait → restore clipboard
+    C->>OS: pynput Cmd+V / Ctrl+V
+    C->>C: 50 ms wait -> restore clipboard
     OS-->>U: text appears in active app
 ```
 
@@ -284,7 +284,7 @@ flowchart TD
       TRY1 -->|2xx| OK["text"]
       TRY1 -->|fail| FB{"fallback_servers[]<br/>more entries?"}
       FB -->|yes| TRY1
-      FB -->|no| LOCAL_FB["⚠ all servers down<br/>→ run local backend"]
+      FB -->|no| LOCAL_FB["all servers down<br/>-> run local backend"]
       LOCAL_FB --> RUN
     end
 
@@ -351,10 +351,10 @@ Please test on your target OS before opening a PR.
 
 ## Credits
 
-- [OpenAI Whisper](https://github.com/openai/whisper) — the speech recognition model
-- [faster-whisper](https://github.com/SYSTRAN/faster-whisper) — CTranslate2 inference engine
-- [whisper.cpp](https://github.com/ggerganov/whisper.cpp) — C/C++ server backend
-- [Google Noto Emoji](https://github.com/googlefonts/noto-emoji) — the 😮 icon (Apache 2.0)
+- [OpenAI Whisper](https://github.com/openai/whisper) - the speech recognition model
+- [faster-whisper](https://github.com/SYSTRAN/faster-whisper) - CTranslate2 inference engine
+- [whisper.cpp](https://github.com/ggerganov/whisper.cpp) - C/C++ server backend
+- [Google Noto Emoji](https://github.com/googlefonts/noto-emoji) - the 😮 icon (Apache 2.0)
 
 ## License
 

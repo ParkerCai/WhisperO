@@ -40,10 +40,10 @@ ICONS_DIR = resolve_icons_dir("icon.png", "icon.ico")
 
 def run(cmd, **kwargs):
     """Run a command and exit on failure."""
-    print(f"  → {' '.join(str(c) for c in cmd)}")
+    print(f"  > {' '.join(str(c) for c in cmd)}")
     result = subprocess.run(cmd, **kwargs)
     if result.returncode != 0:
-        print(f"  ❌ Command failed with exit code {result.returncode}")
+        print(f"[error] Command failed with exit code {result.returncode}")
         sys.exit(1)
     return result
 
@@ -61,10 +61,10 @@ def check_deps() -> None:
         missing.append("Pillow")
 
     if missing:
-        print(f"  ❌ Missing build dependencies: {', '.join(missing)}")
+        print(f"[error] Missing build dependencies: {', '.join(missing)}")
         print(f"  Run: pip install {' '.join(missing)}")
         sys.exit(1)
-    print("  ✓ Build dependencies OK")
+    print("[ok] Build dependencies OK")
 
 
 def generate_icons() -> None:
@@ -73,10 +73,10 @@ def generate_icons() -> None:
     ico = icons_dir / "icon.ico"
     png = icons_dir / "icon.png"
     if ico.exists() and png.exists():
-        print(f"  ✓ Icons ready in {icons_dir} ({ico.stat().st_size // 1024}KB .ico)")
+        print(f"[ok] Icons ready in {icons_dir} ({ico.stat().st_size // 1024}KB .ico)")
         return
     searched = ", ".join(str(path) for path in ICONS_DIR_CANDIDATES)
-    print(f"  ❌ Missing icons. Place icon.png and icon.ico in one of: {searched}")
+    print(f"[error] Missing icons. Place icon.png and icon.ico in one of: {searched}")
     sys.exit(1)
 
 
@@ -101,7 +101,7 @@ def select_mac_icon_source(icons_dir: Path) -> Path | None:
             with Image.open(candidate) as img:
                 width, height = img.size
         except Exception as exc:
-            print(f"  ⚠️  Skipping unreadable icon source {candidate.name}: {exc}")
+            print(f"[warn] Skipping unreadable icon source {candidate.name}: {exc}")
             continue
 
         if width == height and width >= 1024:
@@ -117,14 +117,14 @@ def create_icns_mac() -> Path | None:
     existing_icns_dir = resolve_icons_dir("icon.icns")
     icns_path = existing_icns_dir / "icon.icns"
     if icns_path.exists():
-        print(f"  ✓ Using existing macOS icon: {icns_path}")
+        print(f"[ok] Using existing macOS icon: {icns_path}")
         return icns_path
 
     icons_dir = resolve_icons_dir()
     png_source = select_mac_icon_source(icons_dir)
     icns_path = icons_dir / "icon.icns"
     if not png_source:
-        print("  ⚠️  No PNG icon source found, skipping .icns generation")
+        print("[warn] No PNG icon source found, skipping .icns generation")
         return None
 
     from PIL import Image
@@ -141,10 +141,10 @@ def create_icns_mac() -> Path | None:
 
         if source_size[0] < 1024 or source_size[1] < 1024:
             print(
-                f"  ⚠️  Using {png_source.name} ({source_size[0]}x{source_size[1]}) and scaling it up for macOS"
+                f"[warn] Using {png_source.name} ({source_size[0]}x{source_size[1]}) and scaling it up for macOS"
             )
         else:
-            print(f"  ✓ Using {png_source.name} for macOS icon generation")
+            print(f"[ok] Using {png_source.name} for macOS icon generation")
 
         for sz in [16, 32, 128, 256, 512]:
             resized = source.resize((sz, sz), Image.LANCZOS)
@@ -154,7 +154,7 @@ def create_icns_mac() -> Path | None:
 
         iconutil = shutil.which("iconutil")
         if not iconutil:
-            print("  ⚠️  iconutil not found, skipping .icns generation")
+            print("[warn] iconutil not found, skipping .icns generation")
             return None
 
         result = subprocess.run(
@@ -164,9 +164,9 @@ def create_icns_mac() -> Path | None:
         )
         if result.returncode != 0:
             stderr = result.stderr.strip() or result.stdout.strip() or "unknown error"
-            print(f"  ⚠️  iconutil failed: {stderr}")
+            print(f"[warn] iconutil failed: {stderr}")
             return None
-        print(f"  ✓ icon.icns created: {icns_path}")
+        print(f"[ok] icon.icns created: {icns_path}")
     finally:
         shutil.rmtree(iconset, ignore_errors=True)
 
@@ -180,10 +180,10 @@ def inject_macos_bundle_icon(
 ) -> str | None:
     """Copy a stable .icns into the app bundle and return the plist icon value."""
     if not icon_source:
-        print("  ⚠️  No macOS .icns source available for post-build bundle injection")
+        print("[warn] No macOS .icns source available for post-build bundle injection")
         return None
     if not icon_source.exists():
-        print(f"  ⚠️  macOS icon source not found: {icon_source}")
+        print(f"[warn] macOS icon source not found: {icon_source}")
         return None
 
     resources_dir = app_path / "Contents" / "Resources"
@@ -195,7 +195,7 @@ def inject_macos_bundle_icon(
     if destination_resolved != source_resolved:
         shutil.copy2(icon_source, bundled_icon_path)
 
-    print(f"  ✓ Bundled macOS icon as {bundled_icon_path.name}")
+    print(f"[ok] Bundled macOS icon as {bundled_icon_path.name}")
     return bundled_icon_path.stem
 
 
@@ -203,7 +203,7 @@ def patch_info_plist(app_path: Path, bundle_icon_source: Path | None = None) -> 
     """Add permission descriptions to app Info.plist and force a stable bundle icon."""
     plist_path = app_path / "Contents" / "Info.plist"
     if not plist_path.exists():
-        print(f"  ⚠️  No Info.plist found at {plist_path}")
+        print(f"[warn] No Info.plist found at {plist_path}")
         return
 
     bundle_icon_value = inject_macos_bundle_icon(app_path, bundle_icon_source)
@@ -226,10 +226,10 @@ def patch_info_plist(app_path: Path, bundle_icon_source: Path | None = None) -> 
 
     if bundle_icon_value:
         print(
-            f"  ✓ Info.plist patched with permission descriptions and CFBundleIconFile={bundle_icon_value}"
+            f"[ok] Info.plist patched with permission descriptions and CFBundleIconFile={bundle_icon_value}"
         )
     else:
-        print("  ✓ Info.plist patched with permission descriptions")
+        print("[ok] Info.plist patched with permission descriptions")
 
 
 
@@ -238,7 +238,7 @@ def clean_build() -> None:
     for path in [DIST, PYI_BUILD]:
         if path.exists():
             shutil.rmtree(path)
-            print(f"  ✓ Cleaned {path}")
+            print(f"[ok] Cleaned {path}")
 
     spec = ROOT / f"{APP_NAME}.spec"
     if spec.exists():
@@ -289,12 +289,12 @@ def build_pyinstaller() -> None:
     if dict_file.exists():
         args += ["--add-data", f"{dict_file}{os.pathsep}."]
     else:
-        print("  ⚠️  No dictionary.txt found, app will start with empty dictionary")
+        print("[warn] No dictionary.txt found, app will start with empty dictionary")
 
     if system == "Darwin":
         icns = create_icns_mac()
         if not icns:
-            print("  ⚠️  Proceeding without a generated macOS build icon; post-build injection may be skipped")
+            print("[warn] Proceeding without a generated macOS build icon; post-build injection may be skipped")
         args += [
             "--windowed",
             "--osx-bundle-identifier",
@@ -318,7 +318,7 @@ def build_pyinstaller() -> None:
         if ico.exists():
             args += ["--icon", str(ico)]
     else:
-        print(f"  ⚠️  Unsupported platform: {system}")
+        print(f"[warn] Unsupported platform: {system}")
         remove_entry_script()
         sys.exit(1)
 
@@ -352,7 +352,7 @@ def build_pyinstaller() -> None:
             if alt_path.exists():
                 shutil.move(str(alt_path), str(app_path))
             else:
-                print("  ❌ .app bundle not found. Contents of dist/:")
+                print("[error] .app bundle not found. Contents of dist/:")
                 for item in DIST.iterdir():
                     print(f"     {item.name}")
                 sys.exit(1)
@@ -389,24 +389,24 @@ def build_pyinstaller() -> None:
                     str(app_path),
                 ]
             )
-            print("  ✓ App signed with microphone entitlements")
+            print("[ok] App signed with microphone entitlements")
 
         print(f"\n{'=' * 55}")
-        print(f"  ✅ Built: dist/{APP_NAME}.app")
-        print("  📝 Dictionary: ~/.whispero/dictionary.txt")
+        print(f"[ok] Built: dist/{APP_NAME}.app")
+        print("  Dictionary: ~/.whispero/dictionary.txt")
         print("")
         print("  To run:")
-        print("    Right-click → Open (first time only)")
+        print("    Right-click > Open (first time only)")
         print("")
         print("  To install:")
         print(f"    Drag '{APP_NAME}.app' to /Applications/")
         print("    Grant Accessibility + Input Monitoring + Mic")
-        print("    in System Settings → Privacy & Security")
+        print("    in System Settings > Privacy & Security")
         print(f"{'=' * 55}")
     else:
         print(f"\n{'=' * 55}")
-        print(f"  ✅ Built: dist/{APP_NAME}/{APP_NAME}.exe")
-        print("  📝 Dictionary: ~/.whispero/dictionary.txt")
+        print(f"[ok] Built: dist/{APP_NAME}/{APP_NAME}.exe")
+        print("  Dictionary: ~/.whispero/dictionary.txt")
         print("")
         print(f"  To run: dist\\{APP_NAME}\\{APP_NAME}.exe")
         print("  Edit ~/.whispero/dictionary.txt to add custom words.")
@@ -414,11 +414,11 @@ def build_pyinstaller() -> None:
 
 
 def main() -> None:
-    print(f"🔨 {APP_NAME} Build Script\n")
+    print(f"{APP_NAME} Build Script\n")
     check_deps()
     generate_icons()
     build_pyinstaller()
-    print("\n🎉 Done!")
+    print("\nDone.")
 
 
 if __name__ == "__main__":
